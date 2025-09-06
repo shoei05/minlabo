@@ -24,9 +24,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Create config.js from secret
+      - name: Create config.js with Worker URL
         run: |
-          echo "window.MINLABO_APIKEY='${{ secrets.STABLE_HORDE_API_KEY }}';" > config.js
+          echo "window.WORKER_URL='${{ secrets.PUBLIC_WORKER_URL }}';" > config.js
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
@@ -36,4 +36,3 @@ jobs:
       - name: Deploy to GitHub Pages
         id: deploy
         uses: actions/deploy-pages@v4
-

@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>みんらぼカードゲーム</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- 外部設定ファイル（APIキー注入用）。本番は GitHub Actions で生成 -->
+    <!-- 外部設定ファイル（Worker URL 注入）。本番は GitHub Actions で生成 -->
     <script src="config.js"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@300;400;500;700&display=swap');
@@ -851,13 +851,12 @@
                 console.log('Generated prompt:', prompt);
                 
                 // AI Horde APIに生成リクエストを送信
-                const generateResponse = await fetch('https://stablehorde.net/api/v2/generate/async', {
+                const baseUrl = (window && window.WORKER_URL) ? window.WORKER_URL.replace(/\/$/, '') : '';
+                const generateResponse = await fetch(`${baseUrl}/generate/async`, {
                     method: 'POST',
                     mode: 'cors',
                     headers: {
-                        // GitHub Actions で生成される config.js の値を利用
-                        'apikey': (window && window.MINLABO_APIKEY) ? window.MINLABO_APIKEY : '',
-                        'Client-Agent': 'MinLaboCardGame:1.0:minlabo@example.com',
+                        // APIキーはCloudflare Worker側で付与するため不要
                         'Content-Type': 'application/json',
                         'Accept': 'application/json'
                     },
@@ -893,13 +892,9 @@
                     await new Promise(resolve => setTimeout(resolve, 5000));
                     attempts++;
                     
-                    const statusResponse = await fetch(`https://stablehorde.net/api/v2/generate/status/${jobId}`, {
+                    const statusResponse = await fetch(`${baseUrl}/generate/status/${jobId}`, {
                         mode: 'cors',
-                        headers: {
-                            'apikey': (window && window.MINLABO_APIKEY) ? window.MINLABO_APIKEY : '',
-                            'Client-Agent': 'MinLaboCardGame:1.0:minlabo@example.com',
-                            'Accept': 'application/json'
-                        }
+                        headers: { 'Accept': 'application/json' }
                     });
                     
                     const statusData = await statusResponse.json();

@@ -1,0 +1,12 @@
+name = "minlabo-proxy"
+main = "src/worker.js"
+compatibility_date = "2024-11-01"
+
+# 環境変数（平文）。本番では `wrangler secret put` でシークレットを設定
+[vars]
+ALLOWED_ORIGIN = "*"
+CLIENT_AGENT = "MinLaboCardGame:1.0:minlabo@example.com"
+
+# 本番シークレット例:
+# STABLE_HORDE_API_KEY (secret)
+

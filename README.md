@@ -1,28 +1,38 @@
 ## みんらぼカードゲーム デプロイ手順
 
-このリポジトリでは、Stable Horde の API キーを `app.html` から外出しし、GitHub Actions で GitHub Pages にデプロイします。
-
-注意: ブラウザから直接 API を呼ぶ構成のため、最終的に配信される `config.js` 内のキーは閲覧可能です。第三者悪用のリスクがあります。可能であればサーバ/サーバレスのプロキシ経由で秘匿する構成をご検討ください。
+このリポジトリでは、Stable Horde API への呼び出しを Cloudflare Workers 経由でプロキシし、フロントからは API キーを一切配信しません。GitHub Actions で GitHub Pages にデプロイします。
 
 ### 構成
-- `app.html`: アプリ本体。`window.MINLABO_APIKEY` を参照します。
-- `config.js`: 本番用。Actions がシークレットから生成します（リポジトリにはコミットしません）。
+- `app.html`: アプリ本体。`window.WORKER_URL` を参照します。
+- `config.js`: 本番用。Actions が `PUBLIC_WORKER_URL` から生成します（リポジトリにはコミットしません）。
 - `config.example.js`: 開発用のサンプル。
 - `.github/workflows/deploy.yml`: GitHub Pages デプロイ用ワークフロー。
+- `cloudflare/`: Cloudflare Worker 用のソースと `wrangler.toml`。
 
 ### セットアップ
-1. GitHub リポジトリの Settings → Secrets and variables → Actions → "New repository secret" から以下を登録:
-   - `STABLE_HORDE_API_KEY` : Stable Horde の API キー
+1) Cloudflare Worker をデプロイ
 
-2. デフォルトブランチ `main` へプッシュすると Actions が `config.js` を生成し、Pages へデプロイします。
+   - 前提: `npm i -g wrangler` で wrangler をインストール、`wrangler login` 済み
+   - `cloudflare/` ディレクトリで以下を実行:
+     - `wrangler secret put STABLE_HORDE_API_KEY`（Stable Horde API キーを入力）
+     - （任意）`wrangler kv namespace create MINLABO_CACHE` などの追加リソースは不要です
+     - `wrangler deploy` でデプロイ
+   - デプロイ後の公開URL（例: `https://minlabo-proxy.yourname.workers.dev`）を控えてください。
+
+2) GitHub リポジトリ側の設定
+
+   - Settings → Secrets and variables → Actions → New repository secret で以下を登録:
+     - `PUBLIC_WORKER_URL` : 上記 Worker の公開URL
+
+3) デプロイ
+
+   - デフォルトブランチ `main` に push すると Actions が `config.js` を生成し、Pages へデプロイします。
 
 ### ローカル開発
 1. `cp config.example.js config.js`
-2. `config.js` に API キーを設定
+2. `config.js` に `WORKER_URL` を設定
 3. `app.html` をブラウザで開く
 
 ### セキュリティ上の注意
-- フロントエンドのみの構成では API キー秘匿はできません。乱用防止のため次を検討:
-  - キーの発行権限/レート制限/ドメイン制限（サービス側で提供される場合）
-  - 署名付きリクエストや中継サーバ導入（Cloudflare Workers, Vercel Functions など）
-
+- Cloudflare Worker が API キーを保持するため、フロントからキーは見えません。
+- 追加対策として `cloudflare/wrangler.toml` の `ALLOWED_ORIGIN` を GitHub Pages のドメインに設定することで CORS 制限が可能です。
