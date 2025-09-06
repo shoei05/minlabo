@@ -1,0 +1,1003 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>みんらぼカードゲーム</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- 外部設定ファイル（APIキー注入用）。本番は GitHub Actions で生成 -->
+    <script src="config.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@300;400;500;700&display=swap');
+        body { font-family: 'Noto Sans JP', sans-serif; }
+        
+        .card {
+            transition: all 0.3s ease;
+            cursor: pointer;
+        }
+        
+        .card:hover {
+            transform: translateY(-8px);
+            box-shadow: 0 20px 40px rgba(0,0,0,0.15);
+        }
+        
+        .card.selected {
+            transform: translateY(-8px);
+            box-shadow: 0 0 0 4px #3b82f6;
+            border-color: #3b82f6 !important;
+            background: linear-gradient(135deg, #dbeafe 0%, #bfdbfe 100%);
+        }
+        
+        .card.selected::before {
+            content: "✓ 選択中";
+            position: absolute;
+            top: -10px;
+            right: -10px;
+            background: #3b82f6;
+            color: white;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: bold;
+        }
+        
+        .card.final-selected {
+            transform: translateY(-8px);
+            box-shadow: 0 0 0 4px #8b5cf6;
+            border-color: #8b5cf6 !important;
+            background: linear-gradient(135deg, #f3e8ff 0%, #e9d5ff 100%);
+        }
+        
+        .card.final-selected::before {
+            content: "★ 最終選択";
+            position: absolute;
+            top: -10px;
+            right: -10px;
+            background: #8b5cf6;
+            color: white;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: bold;
+        }
+        
+        .fade-in {
+            animation: fadeIn 0.5s ease-in;
+        }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        
+        .exchange-animation {
+            animation: exchangeFlow 2s ease-in-out;
+        }
+        
+        @keyframes exchangeFlow {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.3; transform: scale(0.95); }
+        }
+    </style>
+</head>
+<body class="bg-gradient-to-br from-purple-100 via-blue-50 to-indigo-100 min-h-screen">
+    <div class="container mx-auto px-4 py-8 max-w-6xl">
+        <!-- ヘッダー -->
+        <div class="text-center mb-8">
+            <h1 class="text-4xl font-bold text-gray-800 mb-2">🎮 みんらぼカードゲーム</h1>
+            <p class="text-gray-600 text-lg">人生の最期に大切なものを見つける旅</p>
+        </div>
+
+        <!-- プログレスバー -->
+        <div class="bg-white rounded-xl shadow-lg p-6 mb-8">
+            <div class="flex justify-between items-center mb-4">
+                <div class="text-lg font-semibold text-gray-700" id="stepTitle">ゲーム開始</div>
+                <div class="text-sm text-gray-500" id="roundInfo">準備中</div>
+            </div>
+            <div class="w-full bg-gray-200 rounded-full h-3">
+                <div class="bg-gradient-to-r from-purple-500 to-blue-500 h-3 rounded-full transition-all duration-500" id="progressBar" style="width: 0%"></div>
+            </div>
+        </div>
+
+        <!-- ゲーム開始画面 -->
+        <div id="startScreen" class="text-center bg-white rounded-xl shadow-lg p-12 fade-in">
+            <div class="text-6xl mb-6">🎴</div>
+            <h2 class="text-2xl font-bold text-gray-800 mb-4">みんらぼカードゲーム</h2>
+            <div class="text-gray-600 mb-8 max-w-2xl mx-auto leading-relaxed space-y-4">
+                <p><strong>あなたが余命2ヶ月と宣告された場合を想定してご参加いただきます。</strong></p>
+                <p>今のあなたは痛みもなく普通に歩くことができ、意識ははっきりしています。</p>
+                <p>このゲームでは、人生の最期に向けて何を大切にしたいかを深く考えていただきます。</p>
+                <p>3回の交換を通じて、最終的に1枚の最も大切なカードを見つけていきましょう。</p>
+            </div>
+            <button onclick="startGame()" class="bg-gradient-to-r from-purple-500 to-blue-500 text-white px-8 py-4 rounded-lg font-semibold text-lg hover:from-purple-600 hover:to-blue-600 transition-all duration-300 transform hover:scale-105">
+                ゲーム開始
+            </button>
+        </div>
+
+        <!-- メインゲーム画面 -->
+        <div id="gameScreen" class="hidden">
+            <!-- ルール説明 -->
+            <div class="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
+                <h4 class="font-semibold text-blue-800 mb-2">📋 ルール説明</h4>
+                <p class="text-blue-700 text-sm">
+                    手札から捨てたいカードと、場から取りたいカードを<strong>同じ枚数</strong>選んで交換します。
+                    カードをクリックすると選択され、もう一度クリックすると選択が外れます。
+                </p>
+            </div>
+
+            <!-- 現在の指示 -->
+            <div class="bg-green-50 border border-green-200 rounded-lg p-4 mb-6">
+                <h4 class="font-semibold text-green-800 mb-2">🎯 現在の手順</h4>
+                <p class="text-green-700 text-sm" id="instructionText">
+                    手札から捨てたいカードをクリックして選択してください。
+                </p>
+            </div>
+
+            <!-- 手札エリア -->
+            <div class="mb-8">
+                <h3 class="text-xl font-semibold text-gray-800 mb-4 flex items-center">
+                    <span class="mr-2">🤲</span>あなたの手札
+                </h3>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4" id="handCards"></div>
+            </div>
+
+            <!-- 場のカードエリア -->
+            <div class="mb-8">
+                <h3 class="text-xl font-semibold text-gray-800 mb-4 flex items-center">
+                    <span class="mr-2">🎴</span>場のカード（交換候補）
+                </h3>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4" id="fieldCards"></div>
+            </div>
+
+            <!-- アクションボタン -->
+            <div class="text-center" id="actionButtons">
+                <button onclick="skipExchange()" class="bg-gray-500 text-white px-6 py-3 rounded-lg font-semibold hover:bg-gray-600 transition-all duration-300">
+                    交換をスキップ
+                </button>
+            </div>
+            
+            <!-- 選択枚数表示 -->
+            <div class="text-center mt-4" id="selectionCount">
+                <div class="bg-gray-50 border border-gray-200 rounded-lg p-3 inline-block">
+                    <div class="text-sm text-gray-600">
+                        <span class="font-semibold">選択中:</span>
+                        <span class="text-blue-600 font-bold">手札 <span id="handCount">0</span>枚</span>
+                        <span class="mx-2">|</span>
+                        <span class="text-green-600 font-bold">場 <span id="fieldCount">0</span>枚</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 最終選択画面 -->
+        <div id="finalScreen" class="hidden">
+            <div class="bg-white rounded-xl shadow-lg p-8">
+                <!-- ルール説明 -->
+                <div class="bg-purple-50 border border-purple-200 rounded-lg p-4 mb-6">
+                    <h4 class="font-semibold text-purple-800 mb-2">📋 最終選択</h4>
+                    <p class="text-purple-700 text-sm">
+                        手札の中から<strong>最も大切な1枚</strong>を選んでください。選択したカードは紫の枠で囲まれます。
+                    </p>
+                </div>
+
+                <h2 class="text-2xl font-bold text-gray-800 mb-6 text-center">🌟 最も大切な1枚を選んでください</h2>
+                <div class="text-center mb-6 text-gray-600">
+                    <p class="text-sm">カードを選んだ後、そのカードについて詳しく教えてください</p>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8" id="finalCards"></div>
+                
+                <!-- 理由入力エリア -->
+                <div id="reasonSection" class="hidden">
+                    <div class="mb-3">
+                        <h4 class="font-semibold text-gray-800 mb-2">📝 選択したカードについて教えてください：</h4>
+                        <div class="text-sm text-gray-600 mb-3 bg-blue-50 border border-blue-200 rounded-lg p-3">
+                            <p class="mb-2">このカードに書いてあることを、書ける範囲で具体的に書いてみてください。</p>
+                            <p class="text-xs text-gray-500 mb-2">以下の項目は参考例です。当てはまらない場合や書きにくい項目があれば、無理に全て埋める必要はありません：</p>
+                            <ul class="text-xs text-gray-500 space-y-1 ml-4">
+                                <li>• <strong>いつ</strong>：どのタイミングで（例：最期の1ヶ月間に）</li>
+                                <li>• <strong>どこで</strong>：どの場所で（例：自宅のリビングで）</li>
+                                <li>• <strong>だれと</strong>：どんな人と一緒に（例：家族と）</li>
+                                <li>• <strong>どんなふうに</strong>：どのような形で（例：毎日夕食を一緒に）</li>
+                            </ul>
+                        </div>
+                        <p class="text-sm text-gray-600">あなたなりの想いや考えを、自由に表現してください。</p>
+                    </div>
+                    <textarea id="reasonText" placeholder="例：「いつ」最期の1ヶ月間に、「どこで」自宅のリビングで、「だれと」家族全員と、「どんなふうに」毎日夕食を一緒に食べながら、今日あったことを話し合いたい..." class="w-full p-4 border border-gray-300 rounded-lg resize-none h-40 mb-4"></textarea>
+                    <div class="mb-4 text-sm text-gray-600 bg-yellow-50 border border-yellow-200 rounded-lg p-3">
+                        <span class="font-semibold text-yellow-800">⚠️ プライバシーに関する注意：</span><br>
+                        特定できるような個人名（実名・ニックネーム）は入力しないでください。一般的な関係性（「家族」「友人」など）でご記入ください。
+                    </div>
+                    <div class="text-center">
+                        <button onclick="generateArtwork()" class="bg-gradient-to-r from-purple-500 to-pink-500 text-white px-8 py-4 rounded-lg font-semibold text-lg hover:from-purple-600 hover:to-pink-600 transition-all duration-300">
+                            絵画を生成する
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 完了画面 -->
+        <div id="completeScreen" class="hidden">
+            <div class="bg-white rounded-xl shadow-lg p-8">
+                <h2 class="text-2xl font-bold text-gray-800 mb-6 text-center">🎉 ゲーム完了！</h2>
+                
+                <!-- 選択されたカード表示 -->
+                <div class="text-center mb-8">
+                    <div class="text-lg font-semibold text-gray-700 mb-2">あなたが選んだ最も大切なカード:</div>
+                    <div id="selectedCardDisplay" class="text-xl text-purple-600 font-bold mb-6 p-4 bg-purple-50 rounded-lg"></div>
+                    
+                    <!-- 生成された絵画 -->
+                    <div class="mb-6">
+                        <div id="artworkContainer" class="w-80 h-80 mx-auto bg-gradient-to-br from-purple-200 to-blue-200 rounded-lg flex items-center justify-center text-6xl border-4 border-purple-300">
+                            🎨
+                        </div>
+                        <div id="generationStatus" class="text-sm text-gray-500 mt-2">あなたの選択を表現した絵画</div>
+                    </div>
+                </div>
+                
+                <!-- ゲーム振り返り -->
+                <div class="mb-8">
+                    <h3 class="text-xl font-semibold text-gray-800 mb-4 text-center">📋 ゲームの振り返り</h3>
+                    <div id="gameSummary"></div>
+                </div>
+                
+                <!-- 振り返りのアドバイス -->
+                <div class="bg-gradient-to-r from-blue-50 to-purple-50 border border-blue-200 rounded-lg p-6 mb-6">
+                    <h3 class="text-lg font-semibold text-blue-800 mb-3 flex items-center">
+                        <span class="mr-2">💭</span>振り返りのすすめ
+                    </h3>
+                    <div class="text-blue-700 space-y-3">
+                        <p class="font-medium">🔄 <strong>交換したカードを見直してみましょう</strong></p>
+                        <p class="text-sm">手放したカードと取得したカードを見比べることで、あなたの価値観の変化が見えてきます。</p>
+                        
+                        <p class="font-medium">💬 <strong>周りの人に話してみましょう</strong></p>
+                        <p class="text-sm">なぜそのカードを選んだのか、家族や友人に話してみてください。話すことで、あなたが本当に大事にしていることが明確になります。</p>
+                        
+                        <p class="font-medium">✨ <strong>あなたの価値観を発見</strong></p>
+                        <p class="text-sm">このゲームを通じて見えてきた「大切なもの」は、日常生活でも意識してみてください。それがあなたらしい生き方につながります。</p>
+                    </div>
+                </div>
+                
+                <div class="text-gray-600 mb-6 text-center space-y-2">
+                    <p>このカードがあなたの人生の最期において特別な意味を持つことを願っています。</p>
+                    <p>限られた時間の中で、何を大切にして生きるか、深く考えるきっかけになれば幸いです。</p>
+                    <p class="text-sm italic">※このゲームは終末期医療や人生の価値について考えるためのツールです。</p>
+                </div>
+                
+                <div class="text-center" id="finalButtons">
+                    <button onclick="restartGame()" class="bg-gradient-to-r from-purple-500 to-blue-500 text-white px-6 py-3 rounded-lg font-semibold hover:from-purple-600 hover:to-blue-600 transition-all duration-300">
+                        もう一度プレイする
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ゲーム状態管理
+        let gameState = {
+            step: 0, // 0:開始, 1:交換フェーズ, 2:最終選択, 3:完了
+            round: 0, // 現在の交換ラウンド (0-2)
+            hand: [], // 手札
+            field: [], // 場のカード
+            selectedHand: [], // 選択された手札のインデックス
+            selectedField: [], // 選択された場のカードのインデックス
+            finalCard: null, // 最終選択されたカード
+            finalReason: '', // 選択理由
+            exchangeHistory: [], // 交換履歴
+            allCards: [] // 全カードデータ
+        };
+
+        // カードデータ（終末期医療関連の52枚）
+        const cardData = [
+            "自分の体が病状とともにどう変化するかを知る",
+            "医療機器を使用しない",
+            "残っている身体の機能を活かしたケアを受ける",
+            "望んだ治療やケアを受ける",
+            "尊厳を保つ",
+            "誰かの役に立っている",
+            "懺悔する",
+            "最期まで性的な活動を維持する",
+            "自分の想いを聞いてくれる人がいる",
+            "自分の望みを家族と共有する",
+            "親友が近くにいる",
+            "親しい人と温かくつながっている",
+            "最期は誰かと一緒にいる",
+            "葬儀の参列者をあらかじめ決めておく",
+            "大切な人に別れの挨拶をする",
+            "親しい人とハグする",
+            "自分の最期が近いことを家族が認めている",
+            "自分が家族の負担にならない",
+            "自分の意思を代弁する支援者がいる",
+            "恐怖や不安について話す",
+            "心から信頼できる医療者がいる",
+            "清潔を保つ",
+            "意識がはっきりしている",
+            "ユーモアを保つ",
+            "自宅で最期を迎える",
+            "不安がない",
+            "息苦しさや痛みがない",
+            "自宅・施設・病院を問わず静かな環境で過ごす",
+            "海や森など自然に触れる",
+            "桜や花を愛でる",
+            "旅行に出かける",
+            "話を聞いてくれる臨床宗教師がいる",
+            "やってみたかったことに挑戦する",
+            "やり残した仕事に取り掛かる",
+            "家族や友人とやり残したことを片付ける",
+            "好きな運動をする",
+            "好きなものを食べる",
+            "好きな本を読む",
+            "好きな詩を唄う",
+            "パソコンやスマホのデータを整理する",
+            "本棚の整理をする",
+            "お金など相続について整理する",
+            "前もって自分の墓を作る",
+            "近所の人に挨拶をする",
+            "Social Network Serviceやメールで挨拶する",
+            "最期に周りの人に笑ってもらう",
+            "遺書を書いてその在り処を人に話す",
+            "年越しをする",
+            "瞑想にふける",
+            "人生の意味を問う",
+            "祈る",
+            "自分の幸せを問う"
+        ];
+
+        // ユーティリティ関数
+        function shuffleArray(array) {
+            const newArray = [...array];
+            for (let i = newArray.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [newArray[i], newArray[j]] = [newArray[j], newArray[i]];
+            }
+            return newArray;
+        }
+
+        function updateProgressBar() {
+            const progress = (gameState.step / 3) * 100;
+            document.getElementById('progressBar').style.width = `${progress}%`;
+            
+            const stepTitles = ['ゲーム開始', '交換フェーズ', '最終選択', '完了'];
+            document.getElementById('stepTitle').textContent = stepTitles[gameState.step];
+            
+            if (gameState.step === 1) {
+                document.getElementById('roundInfo').textContent = `交換 ${gameState.round + 1}/3`;
+            } else {
+                document.getElementById('roundInfo').textContent = '';
+            }
+        }
+
+        // ゲーム開始
+        function startGame() {
+            gameState.allCards = shuffleArray([...cardData]);
+            gameState.hand = gameState.allCards.slice(0, 4);
+            gameState.field = gameState.allCards.slice(4, 8);
+            gameState.step = 1;
+            gameState.round = 0;
+            gameState.selectedHand = [];
+            gameState.selectedField = [];
+            gameState.exchangeHistory = [];
+            
+            document.getElementById('startScreen').classList.add('hidden');
+            document.getElementById('gameScreen').classList.remove('hidden');
+            
+            updateProgressBar();
+            renderGameScreen();
+        }
+
+        // ゲーム画面の描画
+        function renderGameScreen() {
+            renderHandCards();
+            renderFieldCards();
+            updateInstructions();
+            updateActionButtons();
+        }
+
+        function renderHandCards() {
+            const container = document.getElementById('handCards');
+            container.innerHTML = '';
+            
+            gameState.hand.forEach((card, index) => {
+                const cardElement = createCardElement(card, 'hand', index);
+                container.appendChild(cardElement);
+            });
+        }
+
+        function renderFieldCards() {
+            const container = document.getElementById('fieldCards');
+            container.innerHTML = '';
+            
+            gameState.field.forEach((card, index) => {
+                const cardElement = createCardElement(card, 'field', index);
+                container.appendChild(cardElement);
+            });
+        }
+
+        function createCardElement(cardText, type, index) {
+            const div = document.createElement('div');
+            div.className = 'card bg-white rounded-lg shadow-md p-4 border-2 border-gray-200 min-h-32 flex items-center justify-center text-center relative';
+            div.innerHTML = `<div class="text-gray-800 font-medium">${cardText}</div>`;
+            
+            div.onclick = () => selectCard(type, index);
+            
+            // 選択状態の反映
+            if (type === 'hand' && gameState.selectedHand.includes(index)) {
+                div.classList.add('selected');
+            } else if (type === 'field' && gameState.selectedField.includes(index)) {
+                div.classList.add('selected');
+            }
+            
+            return div;
+        }
+
+        function selectCard(type, index) {
+            if (type === 'hand') {
+                const selectedIndex = gameState.selectedHand.indexOf(index);
+                if (selectedIndex > -1) {
+                    gameState.selectedHand.splice(selectedIndex, 1);
+                } else {
+                    if (gameState.selectedHand.length < 4) {
+                        gameState.selectedHand.push(index);
+                    }
+                }
+            } else if (type === 'field') {
+                const selectedIndex = gameState.selectedField.indexOf(index);
+                if (selectedIndex > -1) {
+                    gameState.selectedField.splice(selectedIndex, 1);
+                } else {
+                    if (gameState.selectedField.length < 4) {
+                        gameState.selectedField.push(index);
+                    }
+                }
+            }
+            
+            renderGameScreen();
+        }
+
+        function updateInstructions() {
+            const instructionText = document.getElementById('instructionText');
+            
+            // 選択枚数を更新
+            document.getElementById('handCount').textContent = gameState.selectedHand.length;
+            document.getElementById('fieldCount').textContent = gameState.selectedField.length;
+            
+            if (gameState.selectedHand.length === 0 && gameState.selectedField.length === 0) {
+                instructionText.textContent = '手札から捨てたいカードと場から取りたいカードを同じ枚数選択してください。どちらから先に選んでも構いません。';
+            } else if (gameState.selectedHand.length > gameState.selectedField.length) {
+                instructionText.textContent = `場のカードから${gameState.selectedHand.length - gameState.selectedField.length}枚追加で選択してください。`;
+            } else if (gameState.selectedField.length > gameState.selectedHand.length) {
+                instructionText.textContent = `手札から${gameState.selectedField.length - gameState.selectedHand.length}枚追加で選択してください。`;
+            } else if (gameState.selectedField.length === gameState.selectedHand.length && gameState.selectedHand.length > 0) {
+                instructionText.textContent = '交換の準備ができました！';
+            }
+        }
+
+        function updateActionButtons() {
+            const container = document.getElementById('actionButtons');
+            
+            if (gameState.selectedHand.length === 0 && gameState.selectedField.length === 0) {
+                container.innerHTML = `
+                    <button onclick="skipExchange()" class="bg-gray-500 text-white px-6 py-3 rounded-lg font-semibold hover:bg-gray-600 transition-all duration-300">
+                        交換をスキップ
+                    </button>
+                `;
+            } else if (gameState.selectedField.length === gameState.selectedHand.length && gameState.selectedHand.length > 0) {
+                container.innerHTML = `
+                    <button onclick="executeExchange()" class="bg-gradient-to-r from-blue-500 to-purple-500 text-white px-6 py-3 rounded-lg font-semibold hover:from-blue-600 hover:to-purple-600 transition-all duration-300 mr-4">
+                        交換を実行する
+                    </button>
+                    <button onclick="resetSelection()" class="bg-gray-500 text-white px-6 py-3 rounded-lg font-semibold hover:bg-gray-600 transition-all duration-300">
+                        選択をリセット
+                    </button>
+                `;
+            } else {
+                container.innerHTML = `
+                    <button onclick="resetSelection()" class="bg-gray-500 text-white px-6 py-3 rounded-lg font-semibold hover:bg-gray-600 transition-all duration-300">
+                        選択をリセット
+                    </button>
+                `;
+            }
+        }
+
+        function resetSelection() {
+            gameState.selectedHand = [];
+            gameState.selectedField = [];
+            renderGameScreen();
+        }
+
+        function skipExchange() {
+            nextRound();
+        }
+
+        function executeExchange() {
+            // 交換履歴を記録
+            const discardedCards = gameState.selectedHand.map(i => gameState.hand[i]);
+            const acquiredCards = gameState.selectedField.map(i => gameState.field[i]);
+            
+            gameState.exchangeHistory.push({
+                round: gameState.round + 1,
+                discarded: [...discardedCards],
+                acquired: [...acquiredCards]
+            });
+            
+            // 実際の交換処理
+            const newHand = [...gameState.hand];
+            
+            // 手札から選択されたカードを削除（逆順で削除）
+            gameState.selectedHand.sort((a, b) => b - a).forEach(index => {
+                newHand.splice(index, 1);
+            });
+            
+            // 場から選択されたカードを手札に追加
+            acquiredCards.forEach(card => {
+                newHand.push(card);
+            });
+            
+            gameState.hand = newHand;
+            
+            // アニメーション効果
+            document.getElementById('gameScreen').classList.add('exchange-animation');
+            setTimeout(() => {
+                document.getElementById('gameScreen').classList.remove('exchange-animation');
+                nextRound();
+            }, 1000);
+        }
+
+        function nextRound() {
+            gameState.round++;
+            gameState.selectedHand = [];
+            gameState.selectedField = [];
+            
+            if (gameState.round >= 3) {
+                showFinalSelection();
+            } else {
+                // 新しい場のカードを準備
+                const usedCards = [...gameState.hand];
+                const availableCards = gameState.allCards.filter(card => !usedCards.includes(card));
+                gameState.field = shuffleArray(availableCards).slice(0, 4);
+                
+                updateProgressBar();
+                renderGameScreen();
+            }
+        }
+
+        function showFinalSelection() {
+            gameState.step = 2;
+            
+            document.getElementById('gameScreen').classList.add('hidden');
+            document.getElementById('finalScreen').classList.remove('hidden');
+            
+            updateProgressBar();
+            renderFinalCards();
+        }
+
+        function renderFinalCards() {
+            const container = document.getElementById('finalCards');
+            container.innerHTML = '';
+            
+            gameState.hand.forEach((card, index) => {
+                const div = document.createElement('div');
+                div.className = 'card bg-white rounded-lg shadow-lg p-6 border-2 border-gray-200 min-h-40 flex items-center justify-center text-center cursor-pointer hover:border-purple-400 relative';
+                div.innerHTML = `<div class="text-gray-800 font-semibold text-lg">${card}</div>`;
+                
+                div.onclick = () => selectFinalCard(card, index);
+                container.appendChild(div);
+            });
+        }
+
+        function selectFinalCard(card, index) {
+            gameState.finalCard = card;
+            
+            // 全てのカードの選択状態をリセット
+            document.querySelectorAll('#finalCards .card').forEach(el => {
+                el.classList.remove('final-selected');
+            });
+            
+            // 選択されたカードをハイライト
+            const selectedCard = document.getElementById('finalCards').children[index];
+            selectedCard.classList.add('final-selected');
+            
+            // 理由入力セクションを表示
+            document.getElementById('reasonSection').classList.remove('hidden');
+        }
+
+        async function generateArtwork() {
+            const reason = document.getElementById('reasonText').value.trim();
+            
+            if (!reason) {
+                alert('カードを選んだ理由を教えてください。');
+                return;
+            }
+            
+            gameState.finalReason = reason;
+            gameState.step = 3;
+            
+            document.getElementById('finalScreen').classList.add('hidden');
+            document.getElementById('completeScreen').classList.remove('hidden');
+            
+            updateProgressBar();
+            renderCompletionScreen();
+            
+            // 絵画生成を開始
+            await generateImage(gameState.finalCard, reason);
+        }
+
+        function renderCompletionScreen() {
+            document.getElementById('selectedCardDisplay').textContent = gameState.finalCard;
+            renderGameSummary();
+        }
+
+        function renderGameSummary() {
+            const container = document.getElementById('gameSummary');
+            let summaryHTML = '';
+            
+            // 初期手札
+            summaryHTML += `
+                <div class="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
+                    <h4 class="font-semibold text-blue-800 mb-2">🎴 初期手札</h4>
+                    <div class="grid grid-cols-1 gap-2">
+                        ${gameState.allCards.slice(0, 4).map(card => `
+                            <div class="text-sm text-blue-700 p-2 bg-white rounded border">${card}</div>
+                        `).join('')}
+                    </div>
+                </div>
+            `;
+            
+            // 交換履歴
+            gameState.exchangeHistory.forEach(exchange => {
+                summaryHTML += `
+                    <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-4">
+                        <h4 class="font-semibold text-yellow-800 mb-2">🔄 交換 ${exchange.round}</h4>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <div class="text-sm font-medium text-red-600 mb-1">手放したカード:</div>
+                                ${exchange.discarded.map(card => `
+                                    <div class="text-xs text-red-700 p-2 bg-red-100 rounded border mb-1">${card}</div>
+                                `).join('')}
+                            </div>
+                            <div>
+                                <div class="text-sm font-medium text-green-600 mb-1">取得したカード:</div>
+                                ${exchange.acquired.map(card => `
+                                    <div class="text-xs text-green-700 p-2 bg-green-100 rounded border mb-1">${card}</div>
+                                `).join('')}
+                            </div>
+                        </div>
+                    </div>
+                `;
+            });
+            
+            // 最終手札
+            summaryHTML += `
+                <div class="bg-purple-50 border border-purple-200 rounded-lg p-4 mb-4">
+                    <h4 class="font-semibold text-purple-800 mb-2">🤲 最終手札</h4>
+                    <div class="grid grid-cols-1 gap-2">
+                        ${gameState.hand.map(card => `
+                            <div class="text-sm p-2 rounded border ${card === gameState.finalCard ? 'bg-purple-200 text-purple-800 font-bold border-purple-400' : 'bg-white text-purple-700'}">${card}</div>
+                        `).join('')}
+                    </div>
+                </div>
+            `;
+            
+            // 選択理由
+            if (gameState.finalReason) {
+                summaryHTML += `
+                    <div class="bg-pink-50 border border-pink-200 rounded-lg p-4">
+                        <h4 class="font-semibold text-pink-800 mb-2">💭 選択理由</h4>
+                        <div class="text-sm text-pink-700 p-3 bg-white rounded border italic">
+                            "${gameState.finalReason}"
+                        </div>
+                    </div>
+                `;
+            }
+            
+            container.innerHTML = summaryHTML;
+        }
+
+        // 意味のあるカードプロンプトマッピングシステム
+        const safeCardPrompts = {
+            // 医療・ケア関連
+            "自分の体が病状とともにどう変化するかを知る": "peaceful library with medical books, stethoscope on desk, warm study atmosphere, knowledge symbols",
+            "医療機器を使用しない": "natural healing garden, herbal plants, traditional medicine, organic wellness environment",
+            "残っている身体の機能を活かしたケアを受ける": "therapeutic garden, rehabilitation equipment, healing environment, recovery symbols",
+            "望んだ治療やケアを受ける": "comfortable hospital room, medical chart, professional healthcare setting, caring atmosphere",
+            "尊厳を保つ": "elegant room with classical furniture, crown symbol, dignified atmosphere, respectful environment",
+            "誰かの役に立っている": "volunteer center, helping hands symbol, community service, meaningful contribution",
+            "懺悔する": "peaceful chapel interior, confession booth, spiritual reflection space, divine light",
+            "最期まで性的な活動を維持する": "romantic bedroom, rose petals, intimate setting, love symbols",
+            
+            // 人間関係・コミュニケーション
+            "自分の想いを聞いてくれる人がいる": "comfortable counseling room, empty chairs facing each other, listening ear symbol, supportive atmosphere",
+            "自分の望みを家族と共有する": "warm living room, family discussion table, photo frames, cozy home setting",
+            "親友が近くにいる": "friendship garden, two coffee cups, comfortable seating area, afternoon tea setting",
+            "親しい人と温かくつながっている": "connection bridge, warm light, intertwined hands symbol, emotional bond imagery",
+            "最期は誰かと一緒にいる": "peaceful bedroom, bedside chair, gentle presence symbols, soft natural lighting",
+            "葬儀の参列者をあらかじめ決めておく": "planning office, guest list, organized documents, respectful preparation",
+            "大切な人に別れの挨拶をする": "farewell garden, goodbye letter, emotional moment, gentle lighting",
+            "親しい人とハグする": "comfort symbols, warm embrace imagery, loving atmosphere, heart shapes",
+            "自分の最期が近いことを家族が認めている": "understanding atmosphere, peaceful acceptance, family unity symbols",
+            "自分が家族の負担にならない": "independence symbols, self-reliance imagery, dignified space, freedom birds",
+            "自分の意思を代弁する支援者がいる": "advocacy office, legal documents, professional support, consultation room",
+            "恐怖や不安について話す": "therapy room, calming colors, emotional support space, peaceful environment",
+            "心から信頼できる医療者がいる": "medical consultation room, doctor's coat, professional care, compassionate setting",
+            
+            // 身体的・精神的状態
+            "清潔を保つ": "clean bright bathroom, soap bubbles, organized space, gentle minimalist design",
+            "意識がはっきりしている": "bright clear sky, sharp focus, clear thinking symbols, mental clarity",
+            "ユーモアを保つ": "comedy masks, joyful laughter symbols, light-hearted moments, cheerful atmosphere",
+            "自宅で最期を迎える": "comfortable home bedroom, familiar surroundings, cozy blankets, family photos",
+            "不安がない": "peaceful zen garden, calm water, stress-free environment, serene atmosphere",
+            "息苦しさや痛みがない": "comfortable rest, soft pillows, relaxation scene, peaceful sleep",
+            "自宅・施設・病院を問わず静かな環境で過ごす": "quiet library, peaceful silence, serene atmosphere, minimal distraction",
+            
+            // 自然・環境
+            "海や森など自然に触れる": "beautiful ocean waves, forest trees, natural healing, environmental peace",
+            "桜や花を愛でる": "blooming cherry blossoms, seasonal flowers, garden beauty, natural wonder",
+            "旅行に出かける": "travel suitcase, world map, scenic destinations, adventure spirit",
+            
+            // 精神的・宗教的活動
+            "話を聞いてくれる臨床宗教師がいる": "religious counseling room, spiritual books, consultation, divine comfort",
+            "やってみたかったことに挑戦する": "bucket list, personal achievement, success celebration, new experiences",
+            "やり残した仕事に取り掛かる": "office desk, unfinished project, career satisfaction, professional accomplishment",
+            "家族や友人とやり残したことを片付ける": "shared workspace, teamwork, collaborative effort, completion symbols",
+            
+            // 趣味・活動
+            "好きな運動をする": "exercise equipment, yoga mat, movement therapy, health maintenance",
+            "好きなものを食べる": "gourmet dining table, delicious food, culinary experience, favorite meals",
+            "好きな本を読む": "library corner, open books, reading chair, literary escape",
+            "好きな詩を唄う": "music notes, microphone, singing stage, artistic expression",
+            
+            // 整理・準備
+            "パソコンやスマホのデータを整理する": "computer desk, digital files, data organization, modern technology",
+            "本棚の整理をする": "organized bookshelf, literary collection, library management, book sorting",
+            "お金など相続について整理する": "financial documents, inheritance papers, estate planning, money management",
+            "前もって自分の墓を作る": "peaceful cemetery, memorial stone, respectful remembrance, eternal rest",
+            
+            // コミュニケーション
+            "近所の人に挨拶をする": "neighborhood street, friendly wave, community connection, social interaction",
+            "Social Network Serviceやメールで挨拶する": "computer screen, social media, digital communication, online connection",
+            "最期に周りの人に笑ってもらう": "joyful gathering, shared laughter, positive memories, happiness symbols",
+            "遺書を書いてその在り処を人に話す": "writing desk, important documents, legacy preparation, final letter",
+            
+            // 特別な時間
+            "年越しをする": "new year fireworks, traditional ceremony, time passage, celebration",
+            "瞑想にふける": "meditation cushion, mindful contemplation, inner peace, spiritual reflection",
+            "人生の意味を問う": "philosophical books, deep thinking, existential contemplation, life questions",
+            "祈る": "prayer hands, spiritual devotion, divine connection, religious symbols",
+            "自分の幸せを問う": "happiness symbols, personal reflection, life satisfaction, contentment"
+        };
+
+        // 意味のある絵画生成システム（安全性を保ちつつ具体的に）
+        function generatePrompt(cardText, reason) {
+            const qualityTags = 'masterpiece, best quality, ultra detailed, 8k resolution, meaningful illustration, symbolic art';
+            
+            // アーティスト参照をランダム選択
+            const artists = [
+                "in the style of Annie Leibovitz emotional portraiture",
+                "reminiscent of Steve McCurry human stories",
+                "inspired by Gregory Crewdson cinematic storytelling",
+                "with the emotional depth of Richard Avedon",
+                "capturing essence like Henri Cartier-Bresson decisive moments"
+            ];
+            const selectedArtist = artists[Math.floor(Math.random() * artists.length)];
+            
+            // より具体的で意味のあるプロンプトマッピング
+            let theme = safeCardPrompts[cardText] || 'peaceful landscape with meaningful objects, gentle atmosphere, symbolic elements';
+            
+            // ユーザーの記述から具体的な要素を抽出
+            const meaningfulElements = {
+                '家族': 'family home, warm kitchen, dining table with empty chairs, family photos on wall',
+                '友人': 'park bench, coffee shop, shared memories, friendship symbols',
+                '平和': 'zen garden, meditation space, calm water, peaceful nature',
+                '安心': 'cozy bedroom, soft blankets, warm fireplace, comfortable space',
+                '愛': 'heart-shaped objects, romantic garden, love letters, gentle roses',
+                '希望': 'sunrise, lighthouse, bright horizon, blooming flowers',
+                '感謝': 'thank you notes, gift boxes, appreciation symbols, warm light',
+                '自然': 'beautiful landscape, trees, mountains, ocean waves',
+                '音楽': 'musical instruments, sheet music, concert hall, sound waves',
+                '本': 'library, bookshelf, reading corner, open books',
+                '食事': 'dining table, delicious food, kitchen utensils, cooking scene',
+                '旅行': 'travel suitcase, world map, passport, scenic destinations'
+            };
+            
+            let elementPrompt = 'meaningful symbolic objects';
+            for (const [keyword, elements] of Object.entries(meaningfulElements)) {
+                if (reason.includes(keyword) || cardText.includes(keyword)) {
+                    elementPrompt = elements;
+                    break;
+                }
+            }
+            
+            // カードの内容に基づいた色調
+            const emotionColors = {
+                '家族': 'warm golden sunset colors',
+                '友人': 'friendly blue sky tones',
+                '平和': 'soft green nature palette',
+                '安心': 'gentle pink and cream shades',
+                '愛': 'warm red and pink accents',
+                '希望': 'bright yellow sunrise light',
+                '感謝': 'orange autumn colors'
+            };
+            
+            let colorPrompt = 'soft natural colors';
+            for (const [emotion, color] of Object.entries(emotionColors)) {
+                if (reason.includes(emotion)) {
+                    colorPrompt = color;
+                    break;
+                }
+            }
+            
+            const style = 'meaningful illustration, symbolic objects, emotional atmosphere, no human faces, no people, peaceful scene';
+            const enhancement = '(meaningful symbolism:1.4), (no people:1.8), (no human figures:1.8), (safe content:1.8), (peaceful:1.4), (symbolic:1.3)';
+            
+            return `${qualityTags}, ${selectedArtist}, ${theme}, ${elementPrompt}, ${colorPrompt}, ${style}, ${enhancement}`;
+        }
+
+        function generateNegativePrompt() {
+            return 'nsfw, explicit, sexual, inappropriate, violence, disturbing, people, human figures, faces, bodies, children, minors, adults, persons, individuals, lowres, blurry, jpeg artifacts, watermark, signature, bad anatomy, text, logo, cropped, worst quality, low quality, normal quality, username, realistic people, human portraits, character depictions';
+        }
+
+        async function generateImage(cardText, reason) {
+            const statusDiv = document.getElementById('generationStatus');
+            const containerDiv = document.getElementById('artworkContainer');
+            
+            try {
+                statusDiv.textContent = '絵画を生成中...';
+                containerDiv.innerHTML = '<div class="animate-spin text-4xl">🎨</div>';
+                
+                const prompt = generatePrompt(cardText, reason);
+                const negativePrompt = generateNegativePrompt();
+                
+                console.log('Generated prompt:', prompt);
+                
+                // AI Horde APIに生成リクエストを送信
+                const generateResponse = await fetch('https://stablehorde.net/api/v2/generate/async', {
+                    method: 'POST',
+                    mode: 'cors',
+                    headers: {
+                        // GitHub Actions で生成される config.js の値を利用
+                        'apikey': (window && window.MINLABO_APIKEY) ? window.MINLABO_APIKEY : '',
+                        'Client-Agent': 'MinLaboCardGame:1.0:minlabo@example.com',
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        prompt: prompt,
+                        models: ['stable_diffusion'],
+                        params: {
+                            n: 1,
+                            steps: 25,
+                            width: 768,
+                            height: 768,
+                            cfg_scale: 7,
+                            sampler_name: "k_euler_a"
+                        },
+                        nsfw: false
+                    })
+                });
+                
+                const generateData = await generateResponse.json();
+                
+                if (!generateData.id) {
+                    throw new Error('生成リクエストの送信に失敗しました');
+                }
+                
+                const jobId = generateData.id;
+                statusDiv.textContent = `生成中... (ID: ${jobId.substring(0, 8)}...)`;
+                
+                // 結果をポーリング
+                let attempts = 0;
+                const maxAttempts = 60;
+                
+                while (attempts < maxAttempts) {
+                    await new Promise(resolve => setTimeout(resolve, 5000));
+                    attempts++;
+                    
+                    const statusResponse = await fetch(`https://stablehorde.net/api/v2/generate/status/${jobId}`, {
+                        mode: 'cors',
+                        headers: {
+                            'apikey': (window && window.MINLABO_APIKEY) ? window.MINLABO_APIKEY : '',
+                            'Client-Agent': 'MinLaboCardGame:1.0:minlabo@example.com',
+                            'Accept': 'application/json'
+                        }
+                    });
+                    
+                    const statusData = await statusResponse.json();
+                    
+                    if (statusData.generations && statusData.generations.length > 0) {
+                        const imageUrl = statusData.generations[0].img;
+                        containerDiv.innerHTML = `
+                            <img src="${imageUrl}" alt="Generated artwork" 
+                                 class="w-full h-full object-cover rounded-lg shadow-lg">
+                        `;
+                        statusDiv.innerHTML = `
+                            <span class="text-green-600">✅ 絵画生成完了！</span><br>
+                            <a href="${imageUrl}" target="_blank" class="text-blue-500 hover:underline text-xs">
+                                画像を新しいタブで開く
+                            </a>
+                        `;
+                        return;
+                    } else if (statusData.faulted) {
+                        throw new Error('生成処理でエラーが発生しました');
+                    } else {
+                        const queuePosition = statusData.queue_position || 0;
+                        const waitTime = statusData.wait_time || 0;
+                        statusDiv.textContent = `生成中... (キュー: ${queuePosition}, 待機: ${Math.round(waitTime)}秒)`;
+                    }
+                }
+                
+                throw new Error('生成がタイムアウトしました');
+                
+            } catch (error) {
+                console.error('絵画生成エラー:', error);
+                statusDiv.innerHTML = `
+                    <span class="text-red-600">❌ 生成に失敗しました</span><br>
+                    <span class="text-xs">${error.message}</span><br>
+                    <button onclick="retryImageGeneration()" class="mt-2 bg-blue-500 text-white px-4 py-2 rounded text-sm hover:bg-blue-600 transition-colors">
+                        🔄 再試行
+                    </button>
+                `;
+                containerDiv.innerHTML = `
+                    <div class="text-4xl text-gray-400">🎨</div>
+                    <div class="text-xs text-gray-500 mt-2">生成失敗</div>
+                `;
+            }
+        }
+
+
+        
+        function retryImageGeneration() {
+            generateImage(gameState.finalCard, gameState.finalReason);
+        }
+
+        function wrapTextImproved(ctx, text, maxWidth) {
+            const lines = [];
+            let currentLine = '';
+            
+            // 日本語の場合は文字単位で分割
+            for (let i = 0; i < text.length; i++) {
+                const char = text[i];
+                const testLine = currentLine + char;
+                const metrics = ctx.measureText(testLine);
+                
+                if (metrics.width > maxWidth && currentLine.length > 0) {
+                    lines.push(currentLine);
+                    currentLine = char;
+                } else {
+                    currentLine = testLine;
+                }
+            }
+            
+            if (currentLine.length > 0) {
+                lines.push(currentLine);
+            }
+            
+            return lines;
+        }
+        
+
+
+        function restartGame() {
+            gameState = {
+                step: 0,
+                round: 0,
+                hand: [],
+                field: [],
+                selectedHand: [],
+                selectedField: [],
+                finalCard: null,
+                finalReason: '',
+                exchangeHistory: [],
+                allCards: []
+            };
+            
+            document.getElementById('completeScreen').classList.add('hidden');
+            document.getElementById('startScreen').classList.remove('hidden');
+            document.getElementById('reasonText').value = '';
+            document.getElementById('reasonSection').classList.add('hidden');
+            
+            updateProgressBar();
+        }
+    </script>
+<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'97aae6b6b142b557',t:'MTc1NzEyOTU2OC4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+</html>
